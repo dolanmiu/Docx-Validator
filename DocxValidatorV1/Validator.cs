@@ -1,143 +1,67 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Net;
 using System.Net.Http;
-using System.Text;
+using System.Net.Http.Formatting;
 using System.Threading.Tasks;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Validation;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Azure.WebJobs.Host;
-using Microsoft.WindowsAzure.Storage.Blob;
-using System;
-using DocumentFormat.OpenXml.Packaging;
-using DocumentFormat.OpenXml.Validation;
-using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace DocxValidatorV1
 {
     public static class Validator
     {
         [FunctionName("Validate")]
-        public static async Task<HttpResponseMessage> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = null)]HttpRequestMessage req, TraceWriter log)
+        public static async Task<HttpResponseMessage> Run(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = null)] HttpRequestMessage req, TraceWriter log)
         {
             log.Info("C# HTTP trigger function processed a request.");
 
-            var body = await req.Content.ReadAsStringAsync();
+            var filePath = "temp";
+            var provider = new MultipartFormDataStreamProvider(filePath);
+            await req.Content.ReadAsMultipartAsync(provider);
 
-            CloudBlockBlob blob;
-            string name;
-
-            name = Guid.NewGuid().ToString("n");
-
-            string filepath = @"C:\Users\Public\Documents\Word18.docx";
-            ValidateWordDocument(filepath);
-            Console.WriteLine("The file is valid so far.");
-            Console.WriteLine("Inserting some text into the body that would cause Schema error");
-            Console.ReadKey();
-
-            ValidateCorruptedWordDocument(filepath);
-            Console.WriteLine("All done! Press a key.");
-            Console.ReadKey();
-
-
-            using (Stream stream = new MemoryStream(Encoding.UTF8.GetBytes(body)))
+            var errors = new List<ValidationError>();
+            foreach (var file in provider.FileData)
             {
-                await blob.UploadFromStreamAsync(stream);
+                Console.WriteLine(Path.GetFileName(file.LocalFileName));
+                errors = ValidateWordDocument(file.LocalFileName);
             }
 
-            return req.CreateResponse(HttpStatusCode.OK, body);
-
-            /*
-            // parse query parameter
-            string name = req.Get()
-                .FirstOrDefault(q => string.Compare(q.Key, "name", true) == 0)
-                .Value;
-
-            if (name == null)
+            var response = new
             {
-                // Get request body
-                dynamic data = await req.Content.ReadAsAsync<object>();
-                name = data?.name;
-            }
+                errors
+            };
 
-            return name == null
-                ? req.CreateResponse(HttpStatusCode.BadRequest, "Please pass a name on the query string or in the request body")
-                : req.CreateResponse(HttpStatusCode.OK, "Hello " + name);*/
+            return req.CreateResponse(errors.Count == 0 ? HttpStatusCode.OK : HttpStatusCode.BadRequest, response,
+                JsonMediaTypeFormatter.DefaultMediaType);
         }
 
-        public static void ValidateWordDocument(string filepath)
+        public static List<ValidationError> ValidateWordDocument(string filepath)
         {
-            using (WordprocessingDocument wordprocessingDocument =
+            var errors = new List<ValidationError>();
+            using (var wordprocessingDocument =
                 WordprocessingDocument.Open(filepath, true))
             {
-                try
-                {
-                    OpenXmlValidator validator = new OpenXmlValidator();
-                    int count = 0;
-                    foreach (ValidationErrorInfo error in
-                        validator.Validate(wordprocessingDocument))
+                var validator = new OpenXmlValidator();
+                foreach (var error in
+                    validator.Validate(wordprocessingDocument))
+                    errors.Add(new ValidationError
                     {
-                        count++;
-                        Console.WriteLine("Error " + count);
-                        Console.WriteLine("Description: " + error.Description);
-                        Console.WriteLine("ErrorType: " + error.ErrorType);
-                        Console.WriteLine("Node: " + error.Node);
-                        Console.WriteLine("Path: " + error.Path.XPath);
-                        Console.WriteLine("Part: " + error.Part.Uri);
-                        Console.WriteLine("-------------------------------------------");
-                    }
-
-                    Console.WriteLine("count={0}", count);
-                }
-
-                catch (Exception ex)
-                {
-                    Console.WriteLine(ex.Message);
-                }
+                        Description = error.Description,
+                        ErrorType = error.ErrorType.ToString(),
+                        Node = error.Node.ToString(),
+                        Path = error.Path.XPath,
+                        Part = error.Part.Uri.ToString()
+                    });
 
                 wordprocessingDocument.Close();
-            }
-        }
-
-        public static void ValidateCorruptedWordDocument(string filepath)
-        {
-            // Insert some text into the body, this would cause Schema Error
-            using (WordprocessingDocument wordprocessingDocument =
-                WordprocessingDocument.Open(filepath, true))
-            {
-                // Insert some text into the body, this would cause Schema Error
-                Body body = wordprocessingDocument.MainDocumentPart.Document.Body;
-                Run run = new Run(new Text("some text"));
-                body.Append(run);
-
-                try
-                {
-                    OpenXmlValidator validator = new OpenXmlValidator();
-                    int count = 0;
-                    foreach (ValidationErrorInfo error in
-                        validator.Validate(wordprocessingDocument))
-                    {
-                        count++;
-                        Console.WriteLine("Error " + count);
-                        Console.WriteLine("Description: " + error.Description);
-                        Console.WriteLine("ErrorType: " + error.ErrorType);
-                        Console.WriteLine("Node: " + error.Node);
-                        Console.WriteLine("Path: " + error.Path.XPath);
-                        Console.WriteLine("Part: " + error.Part.Uri);
-                        Console.WriteLine("-------------------------------------------");
-                    }
-
-                    Console.WriteLine("count={0}", count);
-                }
-
-                catch (Exception ex)
-                {
-                    Console.WriteLine(ex.Message);
-                }
+                return errors;
             }
         }
     }
-
-
 }

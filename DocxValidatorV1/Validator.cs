@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -25,26 +24,27 @@ namespace DocxValidatorV1
             log.Info("C# HTTP trigger function processed a request.");
 
             var filePath = "temp";
+            Directory.CreateDirectory(filePath);
+            log.Info("Creating MultipartFormDataStreamProvider");
             var provider = new MultipartFormDataStreamProvider(filePath);
+            log.Info("Reading multipart async data");
             await req.Content.ReadAsMultipartAsync(provider);
+            log.Info("Finished reading multipart async data");
 
             var errors = new List<ValidationError>();
             foreach (var file in provider.FileData)
             {
-                Console.WriteLine(Path.GetFileName(file.LocalFileName));
+                log.Info("Validating word document");
                 errors = ValidateWordDocument(file.LocalFileName);
             }
 
-            var response = new
-            {
-                errors
-            };
+            var response = new {errors};
 
             return req.CreateResponse(errors.Count == 0 ? HttpStatusCode.OK : HttpStatusCode.BadRequest, response,
                 JsonMediaTypeFormatter.DefaultMediaType);
         }
 
-        public static List<ValidationError> ValidateWordDocument(string filepath)
+        private static List<ValidationError> ValidateWordDocument(string filepath)
         {
             var errors = new List<ValidationError>();
             using (var wordprocessingDocument =

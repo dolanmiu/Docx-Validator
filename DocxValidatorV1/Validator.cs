@@ -11,6 +11,9 @@ using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Azure.WebJobs.Host;
 
+// http://www.intstrings.com/ramivemula/articles/file-upload-using-multipartformdatastreamprovider-in-asp-net-webapi/
+// https://stackoverflow.com/questions/45364128/how-to-parse-form-data-using-azure-functions
+
 namespace DocxValidatorV1
 {
     public static class Validator
